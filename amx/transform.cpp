@@ -53,7 +53,7 @@ void calc_matrix_dpbssd(int *dst_buf, int8_t *src1_buf, int8_t *src2_buf)
         }
 }
 
-void ToB(uint8_t *src, uint8_t *dst)
+inline void ToB(uint8_t *src, uint8_t *dst)
 {
     int cols = 16;
     int rows = 16;
@@ -71,7 +71,7 @@ void ToB(uint8_t *src, uint8_t *dst)
     }
 }
 
-void ToA(uint8_t *src, uint8_t *dst)
+inline void ToA(uint8_t *src, uint8_t *dst)
 {
     for (int i = 0; i < 16; i++, dst += 64)
     {
@@ -263,12 +263,12 @@ static inline void mm512_split_to_two_uint8(int16_t *src, uint8_t *hi, uint8_t *
 #undef SHUFFLE
 }
 
-constexpr int32_t scale_factor(int bit_depth, int basic_vector_length)
+inline constexpr int32_t scale_factor(int bit_depth, int basic_vector_length)
 {
     return (bit_depth + log2(basic_vector_length) - 9);
 }
 
-void mm512_lshift_add_rshift(int32_t *a, int32_t *b)
+inline void mm512_lshift_add_rshift(int32_t *a, int32_t *b)
 {
     auto lcount = _mm512_set1_epi32(8);
     auto rcount = _mm512_set1_epi32(scale_factor(16, 16));
