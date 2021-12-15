@@ -8,4 +8,4 @@ source_group("\\x86\\" FILES ${ASM_FILES})
 
 add_library(${PROJECT_NAME} STATIC ${ASM_FILES})
 
-target_compile_options(${PROJECT_NAME} PRIVATE -g)
+target_compile_options(${PROJECT_NAME} PRIVATE)

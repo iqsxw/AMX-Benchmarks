@@ -300,6 +300,8 @@ inline void mm512_lshift_add_rshift(int32_t *a, int32_t *b)
 #undef SLA_ADD
 }
 
+void amx_matrix_mul_hl(void *cfg, void *a, void *bh, void *bl, void *c, void *d);
+
 void amx_dct_16x16(int16_t *coefficients)
 {
     TileConfig cfg_src{
@@ -317,15 +319,16 @@ void amx_dct_16x16(int16_t *coefficients)
     uint8_t AMX_ALIGN(64) xh_b[1024] = { 0 };
     uint8_t AMX_ALIGN(64) xl_b[1024] = { 0 };
 
-    mm512_split_to_two_uint8(coefficients, xh, xl);
+    // mm512_split_to_two_uint8(coefficients, xh, xl);
 
-    ToB(xh, xh_b);
-    ToB(xl, xl_b);
+    // ToB(xh, xh_b);
+    // ToB(xl, xl_b);
 
-    memcpy(d, HEVC::Sub, sizeof(HEVC::Sub));
+    // memcpy(d, HEVC::Sub, sizeof(HEVC::Sub));
     amx_matrix_mul_zero(&cfg_src, HEVC::Transform_1024, xh_b, c);
-    amx_matrix_mul(&cfg_src, HEVC::Transform_1024, xl_b, d);
-    mm512_lshift_add_rshift(c, d);
+    // amx_matrix_mul(&cfg_src, HEVC::Transform_1024, xl_b, d);
+    // amx_matrix_mul_hl(&cfg_src, HEVC::Transform_1024, xh_b, xl_b, c, d);
+    // mm512_lshift_add_rshift(c, d);
 
     // DisplayIntergerMatrix(c, 16 * 16, "Result\n", 16);
 

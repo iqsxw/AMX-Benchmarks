@@ -37,28 +37,22 @@ void test_performance()
     int8_t b[16*64];
     int32_t c[16*16];
 
-    TileConfig cfg_src{
-        0,
-        { 64, 16, 64, 64, 64, 64, 64, 64 },
-        { 16, 16, 4, 16, 16, 16, 16, 16 }
-    };
-
     {
         Timer timer{ "ff_hevc_idct_16x16_8_avx: " };
-        // for (volatile int i = 0; i < 1000000; i++)
-        // {
-        //     ff_hevc_idct_16x16_8_avx(data, 16);
-        // }
+        for (volatile int i = 0; i < 10000; i++)
+        {
+            ff_hevc_idct_16x16_8_avx(data, 16);
+        }
 
         ff_hevc_idct_16x16_8_avx(data, 16);
     }
 
     {
         Timer timer{ "AMX DCT_16X16: " };
-        // for (volatile int i = 0; i < 1000000; i++)
-        // {
-        //     amx_dct_16x16(data);
-        // }
+        for (volatile int i = 0; i < 10000; i++)
+        {
+            amx_dct_16x16(data);
+        }
         amx_dct_16x16(data);
     }
 }

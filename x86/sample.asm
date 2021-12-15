@@ -24,6 +24,18 @@ SECTION .text
     DEFINE_ARG %1, cx
 %rotate 1
 %endif
+; %if %0
+;     DEFINE_ARG %1, 8
+; %rotate 1
+; %endif
+; %if %0
+;     DEFINE_ARG %1, 9
+; %rotate 1
+; %endif
+; %if %0
+;     DEFINE_ARG %1, 10
+; %rotate 1
+; %endif
 %endmacro
 
 %macro cglobal 1-2+
@@ -72,5 +84,22 @@ cglobal amx_matrix_mul, cfg, a, b, c
     tilerelease
     ret
 
-cglobal null_test, null
-    ret
+; cglobal amx_matrix_mul_hl, cfg, a, bh, bl, c, d
+;     xor rax, rax
+;     mov rax, 64
+
+;     ldtilecfg      [cfgq]
+;     tileloadd      tmm0, [cq + rax]
+;     tilezero       tmm4
+
+;     tileloadd      tmm1, [aq + rax]
+;     tileloadd      tmm2, [bhq + rax]
+;     tileloadd      tmm3, [blq + rax]
+
+;     tdpbsud        tmm0, tmm1, tmm2
+;     tdpbsud        tmm4, tmm1, tmm3
+
+;     tilestored     [cq + rax], tmm0
+;     tilestored     [dq + rax], tmm4
+;     tilerelease
+;     ret
