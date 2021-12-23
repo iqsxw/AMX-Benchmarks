@@ -48,18 +48,18 @@ def read_filename_from_dir(dir):
     return os.listdir(dir)
 
 if __name__ == "__main__":
-    dir = "images"
+    dir = input("Enter the images source directory:")
 
     md5sum = Command('md5sum')
 
-    jpeg_converter_src = Command('/root/C/AMX-Benchmarks/build_original_jpeg_source')
-    jpeg_converter_dst = Command('/root/C/AMX-Benchmarks/build/libjpeg-benchmark/libjpeg-benchmark')
+    jpeg_converter_src = Command('./build_original_jpeg_source')
+    jpeg_converter_dst = Command('./build_update_jpeg_dst')
 
     invalid_image_set = []
 
-    temp_dir = 'tmp'
-    if not os.path.exists:
-        os.mkdir(temp_dir)
+    tmp_dir = 'tmp'
+    if not os.path.exists(tmp_dir):
+        os.mkdir(tmp_dir)
 
     filenames = read_filename_from_dir(dir)
     print(filenames)
@@ -67,10 +67,10 @@ if __name__ == "__main__":
     for f in filenames:
         intput_filename = os.path.join(dir, f)
 
-        src_md5 = os.path.join(temp_dir, f + '.src.md5')
+        src_md5 = os.path.join(tmp_dir, f + '.src.md5')
         src_jpg = src_md5 + '.jpg'
 
-        dst_md5 = os.path.join(temp_dir, f + '.dst.md5')
+        dst_md5 = os.path.join(tmp_dir, f + '.dst.md5')
         dst_jpg = dst_md5 + '.jpg'
 
         try:
@@ -118,3 +118,8 @@ if __name__ == "__main__":
                 f.write(str(invalid_image_set))
                 f.close()
             continue
+
+    if len(invalid_image_set) == 0:
+        print("Check with success: all Image samples passed")
+    else:
+        print("Failed to check images, check invalid_image_set.txt for more details")
