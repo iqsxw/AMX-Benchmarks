@@ -64,7 +64,7 @@ if __name__ == "__main__":
     filenames = read_filename_from_dir(dir)
     print(filenames)
 
-    for f in filenames:
+    for i, f in enumerate(filenames):
         intput_filename = os.path.join(dir, f)
 
         src_md5 = os.path.join(tmp_dir, f + '.src.md5')
@@ -111,6 +111,7 @@ if __name__ == "__main__":
                 print("Test pass => ", intput_filename)
                 print(md5_text)
 
+            print('process ' + str(i) + '/' + str(len(filenames)))
         except:
             print("Failed on image file => ", intput_filename)
             invalid_image_set.append(intput_filename)

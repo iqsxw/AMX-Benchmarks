@@ -112,7 +112,7 @@ struct Instance
 
 int main(int argc, char **argv)
 {
-    // argv[1] = (char *)"/root/C/AMX-Benchmarks/images/1080p_sam.jpg";
+    argv[1] = (char *)"/root/C/AMX-Benchmarks/images/1080p_sam.jpg";
     std::vector<uint8_t> buffer = ReadFileToBufer(argv[1]);
     tjhandle handle = tjInitDecompress();;
 
@@ -136,25 +136,25 @@ int main(int argc, char **argv)
 
     assert(!ret && "Unable to read header file! Check if it's a Jpeg file.");
 
-    // jpeg.Setup();
+    jpeg.Setup();
 
-    // {
-    //     Timer timer{};
-    //     for (int i = 0; i < 1000; i++)
-    //     {
-    //         ret = tjDecompress2(
-    //             handle,
-    //             buffer.data(),
-    //             buffer.size(),
-    //             jpeg.Data.data(),
-    //             jpeg.Width,
-    //             0,
-    //             jpeg.Height,
-    //             TJPF_RGB,
-    //             0
-    //             );
-    //     }
-    // }
+    {
+        Timer timer{};
+        for (int i = 0; i < 1000; i++)
+        {
+            ret = tjDecompress2(
+                handle,
+                buffer.data(),
+                buffer.size(),
+                jpeg.Data.data(),
+                jpeg.Width,
+                0,
+                jpeg.Height,
+                TJPF_RGB,
+                0
+                );
+        }
+    }
 
     // ret = tjDecompress2(
     //     handle,
