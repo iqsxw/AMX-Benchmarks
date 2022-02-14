@@ -5,7 +5,7 @@
 #include <ctime>
 #include <immintrin.h>
 #include <cassert>
-
+#include <cstring>
 #include "transform.h"
 
 extern "C"  void ff_hevc_idct_16x16_8_avx(int16_t *coeff, int limit);
@@ -106,9 +106,249 @@ void jpeg_zigzag_avx512bw(const uint16_t* in, uint16_t* out) {
     _mm512_storeu_si512((__m512i*)(out + 1 * 32), res1);
 }
 
+#define pixel uint8_t
+#define MAX_PB_SIZE 64
+#define QPEL_EXTRA 7
+#define QPEL_EXTRA_BEFORE 3
+#define BIT_DEPTH 8
+#define QPEL_FILTER(src, stride)                                               \
+    (filter[0] * src[x - 3 * stride] +                                         \
+     filter[1] * src[x - 2 * stride] +                                         \
+     filter[2] * src[x -     stride] +                                         \
+     filter[3] * src[x             ] +                                         \
+     filter[4] * src[x +     stride] +                                         \
+     filter[5] * src[x + 2 * stride] +                                         \
+     filter[6] * src[x + 3 * stride] +                                         \
+     filter[7] * src[x + 4 * stride])
+
+const int8_t ff_hevc_qpel_filters[3][16] = {
+    { -1,  4,-10, 58, 17, -5,  1,  0, -1,  4,-10, 58, 17, -5,  1,  0},
+    { -1,  4,-11, 40, 40,-11,  4, -1, -1,  4,-11, 40, 40,-11,  4, -1},
+    {  0,  1, -5, 17, 58,-10,  4, -1,  0,  1, -5, 17, 58,-10,  4, -1}
+};
+
+const int16_t ff_hevc_qpel_filters_u16[3][16] = {
+    { -1,  4,-10, 58, 17, -5,  1,  0, -1,  4,-10, 58, 17, -5,  1,  0},
+    { -1,  4,-11, 40, 40,-11,  4, -1, -1,  4,-11, 40, 40,-11,  4, -1},
+    {  0,  1, -5, 17, 58,-10,  4, -1,  0,  1, -5, 17, 58,-10,  4, -1}
+};
+
+static void put_hevc_qpel_hv(int16_t *dst,
+                             uint8_t *_src,
+                             ptrdiff_t _srcstride,
+                             int height, intptr_t mx,
+                             intptr_t my, int width)
+{
+    int x, y;
+    const int8_t *filter;
+    pixel *src = (pixel*)_src;
+    ptrdiff_t srcstride = _srcstride / sizeof(pixel);
+    int16_t tmp_array[(MAX_PB_SIZE + QPEL_EXTRA) * MAX_PB_SIZE];
+    int16_t *tmp = tmp_array;
+
+    src   -= QPEL_EXTRA_BEFORE * srcstride;
+    filter = ff_hevc_qpel_filters[mx - 1];
+    for (y = 0; y < height + QPEL_EXTRA; y++) {
+        for (x = 0; x < width; x++)
+            tmp[x] = QPEL_FILTER(src, 1) >> (BIT_DEPTH - 8);
+        src += srcstride;
+        tmp += MAX_PB_SIZE;
+    }
+
+    tmp    = tmp_array + QPEL_EXTRA_BEFORE * MAX_PB_SIZE;
+    filter = ff_hevc_qpel_filters[my - 1];
+    for (y = 0; y < height; y++) {
+        for (x = 0; x < width; x++)
+            dst[x] = QPEL_FILTER(tmp, MAX_PB_SIZE) >> 6;
+        tmp += MAX_PB_SIZE;
+        dst += MAX_PB_SIZE;
+    }
+}
+
+struct u8x16
+{
+    uint8_t data[32];
+};
+
+struct s8x16
+{
+    int8_t data[32];
+};
+
+struct s16x8
+{
+    int16_t data[8];
+};
+
+struct s32x8
+{
+    int32_t data[8];
+};
+
+uint8_t pw_index[64] = {
+     0,  1,  2,  3,
+     1,  2,  3,  4,
+     2,  3,  4,  5,
+     3,  4,  5,  6,
+     4,  5,  6,  7,
+     5,  6,  7,  8,
+     6,  7,  8,  9,
+     7,  8,  9, 10,
+     4,  5,  6,  7,
+     5,  6,  7,  8,
+     6,  7,  8,  9,
+     7,  8,  9, 10,
+     8,  9, 10, 11,
+     9, 10, 11, 12,
+    10, 11, 12, 13,
+    11, 12, 13, 14
+};
+
+static void put_hevc_qpel_hv_vnni(int16_t *dst,
+                             uint8_t *_src,
+                             ptrdiff_t _srcstride,
+                             int height, intptr_t mx,
+                             intptr_t my, int width)
+{
+    int x, y;
+    const int8_t *filter;
+    pixel *src = (pixel*)_src;
+    ptrdiff_t srcstride = _srcstride / sizeof(pixel);
+    int16_t tmp_array[(MAX_PB_SIZE + QPEL_EXTRA) * MAX_PB_SIZE];
+    int16_t *tmp = tmp_array;
+
+    auto zero = _mm256_set1_epi8(0);
+    src   -= QPEL_EXTRA_BEFORE * srcstride;
+    filter = ff_hevc_qpel_filters[mx - 1];
+    auto shuf0 = _mm256_loadu_epi8(pw_index);
+    auto shuf1 = _mm256_loadu_epi8(pw_index + 32);
+    __m64 zero_m64;
+    auto filter0 = _mm256_set1_epi32(*(int32_t *)ff_hevc_qpel_filters[mx - 1]);
+    auto filter1 = _mm256_set1_epi32(*(int32_t *)(ff_hevc_qpel_filters[mx - 1] + 4));
+    // auto filter3 = _mm256_set1_epi64(*(int32_t *)ff_hevc_qpel_filters_u16[mx - 1]);
+    // auto filter4 = _mm256_set1_epi64(*(int32_t *)(ff_hevc_qpel_filters_u16[mx - 1] + 8));
+    auto fv0 = _mm256_set1_epi32(ff_hevc_qpel_filters_u16[my - 1][0]);
+    auto fv1 = _mm256_set1_epi32(ff_hevc_qpel_filters_u16[my - 1][1]);
+    auto fv2 = _mm256_set1_epi32(ff_hevc_qpel_filters_u16[my - 1][2]);
+    auto fv3 = _mm256_set1_epi32(ff_hevc_qpel_filters_u16[my - 1][3]);
+    auto fv4 = _mm256_set1_epi32(ff_hevc_qpel_filters_u16[my - 1][4]);
+    auto fv5 = _mm256_set1_epi32(ff_hevc_qpel_filters_u16[my - 1][5]);
+    auto fv6 = _mm256_set1_epi32(ff_hevc_qpel_filters_u16[my - 1][6]);
+    auto fv7 = _mm256_set1_epi32(ff_hevc_qpel_filters_u16[my - 1][7]);
+    s8x16 *f0 = (s8x16 *)&filter0;
+    s8x16 *f1 = (s8x16 *)&filter1;
+
+#define H_LOAD_COMPUTE(n) \
+        auto ymm##n     = _mm256_castsi128_si256(_mm_loadu_epi8(simd_src - 3)); \
+        auto left##n    = _mm256_permutexvar_epi8(shuf0, ymm##n); \
+        auto right##n   = _mm256_permutexvar_epi8(shuf1, ymm##n); \
+        auto leftres##n = _mm256_dpbusd_epi32(zero, left##n, filter0); \
+        auto res##n = _mm256_dpbusd_epi32(leftres##n, right##n, filter1); \
+        simd_src += srcstride;
+
+    uint8_t *simd_src = src;
+    H_LOAD_COMPUTE(0)
+    H_LOAD_COMPUTE(1)
+    H_LOAD_COMPUTE(2)
+    H_LOAD_COMPUTE(3)
+    H_LOAD_COMPUTE(4)
+    H_LOAD_COMPUTE(5)
+    H_LOAD_COMPUTE(6)
+
+    printf("x -> \n");
+    for (y = 0; y < height + QPEL_EXTRA; y++) {
+        for (x = 0; x < width; x++) {
+            tmp[x] = QPEL_FILTER(src, 1) >> (BIT_DEPTH - 8);
+        }
+        printf("%d: \t", y);
+        for (int i = 0; i < width; i++)
+        {
+            printf("%10d", tmp[i]);
+        }
+        putchar(10);
+        src += srcstride;
+        tmp += MAX_PB_SIZE;
+    }
+
+    printf("y -> \n");
+    tmp    = tmp_array + QPEL_EXTRA_BEFORE * MAX_PB_SIZE;
+    filter = ff_hevc_qpel_filters[my - 1];
+    for (y = 0; y < height; y++) {
+        for (x = 0; x < width; x++)
+            dst[x] = QPEL_FILTER(tmp, MAX_PB_SIZE) >> 6;
+        printf("%d: \t", y);
+        for (int i = 0; i < width; i++)
+        {
+            printf("%10d", dst[i]);
+        }
+        putchar(10);
+        tmp += MAX_PB_SIZE;
+        dst += MAX_PB_SIZE;
+    }
+
+    printf("simd x -> \n");
+    int16_t *s32;
+    s32 = ((s16x8 *)&res0)->data;
+    printf("0: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
+    s32 = ((s16x8 *)&res1)->data;
+    printf("1: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
+    s32 = ((s16x8 *)&res2)->data;
+    printf("2: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
+    s32 = ((s16x8 *)&res3)->data;
+    printf("3: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
+    s32 = ((s16x8 *)&res4)->data;
+    printf("4: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
+    s32 = ((s16x8 *)&res5)->data;
+    printf("5: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
+    s32 = ((s16x8 *)&res6)->data;
+    printf("6: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
+    for (y = 0; y < height; y++) {
+        H_LOAD_COMPUTE(7);
+        auto n0 = _mm256_mullo_epi32(res0, fv0);
+        auto n1 = _mm256_mullo_epi32(res1, fv1);
+        auto n2 = _mm256_mullo_epi32(res2, fv2);
+        auto n3 = _mm256_mullo_epi32(res3, fv3);
+        auto n4 = _mm256_mullo_epi32(res4, fv4);
+        auto n5 = _mm256_mullo_epi32(res5, fv5);
+        auto n6 = _mm256_mullo_epi32(res6, fv6);
+        auto n7 = _mm256_mullo_epi32(res7, fv7);
+        auto sum0 = _mm256_add_epi32(n0, n1);
+        auto sum1 = _mm256_add_epi32(n2, n3);
+        auto sum2 = _mm256_add_epi32(n4, n5);
+        auto sum3 = _mm256_add_epi32(n6, n7);
+        sum0 = _mm256_add_epi32(sum0, sum1);
+        sum1 = _mm256_add_epi32(sum2, sum3);
+        sum0 = _mm256_add_epi32(sum0, sum1);
+        _mm_storeu_epi16(dst, _mm256_cvtepi32_epi16(_mm256_sra_epi32(sum0, _mm_set1_epi64x(6))));
+
+        res0 = res1;
+        res1 = res2;
+        res2 = res3;
+        res3 = res4;
+        res4 = res5;
+        res5 = res6;
+        res6 = res7;
+        dst += MAX_PB_SIZE;
+        s32 = ((s16x8 *)&res7)->data;
+        printf("%d: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", y + QPEL_EXTRA, s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
+    }
+
+    printf("simd y -> \n");
+    dst -= height * MAX_PB_SIZE;
+    for (y = 0; y < height; y++) {
+        printf("%d: \t", y);
+        for (int i = 0; i < width; i++)
+        {
+            printf("%10d", dst[i]);
+        }
+        putchar(10);
+        dst += MAX_PB_SIZE;
+    }
+}
+
 int main()
 {
-    uint16_t coefficients[64] = {
+    uint8_t coefficients[64] = {
          0,  1,  8, 16,  9,  2,  3, 10,
         17, 24, 32, 25, 18, 11,  4,  5,
         12, 19, 26, 33, 40, 48, 41, 34,
@@ -119,11 +359,22 @@ int main()
         53, 60, 61, 54, 47, 55, 62, 63
     };
 
+
+    uint8_t safe_area[1024] = { 0 };
+    memset(safe_area, 1, sizeof(safe_area));
+    memcpy(safe_area + 512, coefficients, sizeof(coefficients));
+
+    auto *ptr = safe_area + 512;
+
+
+    int16_t dst[64 * 8] = { 0 };
+    put_hevc_qpel_hv(dst, ptr, 8, 8, 1, 1, 8);
+    put_hevc_qpel_hv_vnni(dst, ptr, 8, 8, 1, 1, 8);
     uint16_t out[64] = {
         0
     };
 
-    jpeg_zigzag_avx512bw(coefficients, out);
+    // jpeg_zigzag_avx512bw(coefficients, out);
 
     const int __attribute__((aligned(64))) jpeg_natural_order[64 + 16] = {
         0,  1,  8, 16,  9,  2,  3, 10,
@@ -144,6 +395,21 @@ int main()
         out2[i] = coefficients[jpeg_natural_order[i]];
         assert (out2[i] == out[i] && "break");
     }
+
+    int16_t a[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+    int16_t b[] = { 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 };
+
+    auto m1 = _mm512_loadu_epi16(&a);
+    auto m2 = _mm512_loadu_epi16(&b);
+
+    auto m3 = _mm512_set1_epi16(0);
+    m3 = _mm512_dpwssds_epi32(m3, m1, m2);
+
+    for (int i = 0; i < 16; i++)
+    {
+        printf("%4d", ((int *)&m3)[i]);
+    }
+    fflush(stdout);
 
     return 0;
 }

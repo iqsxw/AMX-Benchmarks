@@ -15,7 +15,7 @@ source_group("\\" FILES ${SRC_FILES})
 add_executable(${PROJECT_NAME}
     ${SRC_FILES})
 
-target_compile_options(${PROJECT_NAME} PRIVATE -march=skylake-avx512 -mavx)
+target_compile_options(${PROJECT_NAME} PRIVATE -march=tigerlake -mavx -mavx512vnni)
 
 link_directories(/root/C/ffmpeg/libavcodec/)
 
