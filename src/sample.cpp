@@ -201,6 +201,11 @@ struct s32x8
     int32_t data[8];
 };
 
+struct s32x16
+{
+    int32_t data[16];
+};
+
 uint8_t pb_index[64] = {
      0,  1,  2,  3,
      1,  2,  3,  4,
@@ -326,21 +331,22 @@ static void put_hevc_qpel_hv_vnni(int16_t *dst,
     s16x16 *test0;
     s16x32 *test1;
     s32x8 *test3;
+    s32x16 *test4;
     printf("simd x -> \n");
-    int16_t *s32;
-    s32 = ((s16x8 *)&res0)->data;
+    int32_t *s32;
+    s32 = ((s32x8 *)&res0)->data;
     printf("0: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
-    s32 = ((s16x8 *)&res1)->data;
+    s32 = ((s32x8 *)&res1)->data;
     printf("1: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
-    s32 = ((s16x8 *)&res2)->data;
+    s32 = ((s32x8 *)&res2)->data;
     printf("2: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
-    s32 = ((s16x8 *)&res3)->data;
+    s32 = ((s32x8 *)&res3)->data;
     printf("3: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
-    s32 = ((s16x8 *)&res4)->data;
+    s32 = ((s32x8 *)&res4)->data;
     printf("4: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
-    s32 = ((s16x8 *)&res5)->data;
+    s32 = ((s32x8 *)&res5)->data;
     printf("5: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
-    s32 = ((s16x8 *)&res6)->data;
+    s32 = ((s32x8 *)&res6)->data;
     printf("6: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
     for (y = 0; y < height; y++) {
         H_LOAD_COMPUTE(7);
@@ -354,7 +360,7 @@ static void put_hevc_qpel_hv_vnni(int16_t *dst,
         auto a2 = _mm512_permutex2var_epi16(w1, shuf3, w2);
         a1 = _mm512_dpwssd_epi32(_mm512_set1_epi32(0), a1, filter3);
         a1 = _mm512_dpwssd_epi32(a1, a2, filter4);
-        auto ret = _mm256_add_epi16(_mm512_extracti64x4_epi64(a1, 1), _mm512_castsi512_si256(a1));
+        auto ret = _mm256_add_epi32(_mm512_extracti64x4_epi64(a1, 1), _mm512_castsi512_si256(a1));
         _mm_storeu_epi16(dst, _mm256_cvtepi32_epi16(_mm256_sra_epi32(ret, _mm_set1_epi64x(6))));
         // auto n0 = _mm256_mullo_epi32(res0, fv0);
         // auto n1 = _mm256_mullo_epi32(res1, fv1);
@@ -381,7 +387,7 @@ static void put_hevc_qpel_hv_vnni(int16_t *dst,
         res5 = res6;
         res6 = res7;
         dst += MAX_PB_SIZE;
-        s32 = ((s16x8 *)&res7)->data;
+        s32 = ((s32x8 *)&res7)->data;
         printf("%d: \t%10d%10d%10d%10d%10d%10d%10d%10d\n", y + QPEL_EXTRA, s32[0], s32[1], s32[2], s32[3], s32[4], s32[5], s32[6], s32[7]);
     }
 
